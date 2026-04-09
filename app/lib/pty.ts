@@ -4,6 +4,19 @@ import { ipcMain } from 'electron'
 import { Application } from './app'
 import { UTF8Splitter } from './utfSplitter'
 import { Subject, debounceTime } from 'rxjs'
+import { execSync } from 'child_process'
+
+function getWTConhostPath(): string | undefined {
+    try {
+        const installLocation = execSync('powershell -command "(Get-AppxPackage Microsoft.WindowsTerminal).InstallLocation"', { encoding: 'utf8' }).trim()
+        if (installLocation) {
+            return installLocation + '\\conhost.exe'
+        }
+    } catch (e) {
+        // WT not installed or error
+    }
+    return undefined
+}
 
 class PTYDataQueue {
     private buffers: Buffer[] = []
@@ -141,10 +154,14 @@ export class PTYManager {
     private ptys: Record<string, PTY|undefined> = {}
 
     init (app: Application): void {
-        ipcMain.on('pty:spawn', (event, ...options) => {
+        ipcMain.on('pty:spawn', (event, command, args, spawnOptions) => {
             const id = uuidv4().toString()
+            if (process.platform === 'win32') {
+                spawnOptions = spawnOptions || {}
+                spawnOptions.conhostPath = getWTConhostPath()
+            }
             event.returnValue = id
-            this.ptys[id] = new PTY(id, app, ...options)
+            this.ptys[id] = new PTY(id, app, command, args, spawnOptions)
         })
 
         ipcMain.on('pty:exists', (event, id) => {
